@@ -1,0 +1,287 @@
+using UnityEngine;
+using UnityEngine.AI;
+using UnityEngine.SceneManagement;
+
+public class JakeAI : MonoBehaviour
+{
+    //STATES
+    public enum State
+    {
+        Wandering,
+        Stalking,
+        Hunting,
+        Idle
+    }
+
+    public State currentState = State.Wandering;
+
+    //REFERENCES
+    public Transform player;
+    private NavMeshAgent agent;
+    public AudioSource onStalk;
+    public AudioSource onHunt;
+    public AudioSource onWandering;
+    //DETECTION SETTINGS
+    [Header("Detection")]
+    public float detectionRange = 15f;
+    public float fieldOfViewAngle = 110f;
+    public LayerMask obstacleMask;
+
+    //WANDERING SETTINGS
+    [Header("Wandering")]
+    public float wanderRadius = 20f;
+    public float wanderTimer = 5f;
+    private float wanderTimerCurrent;
+
+    //Stalking Settings
+    [Header("Stalking")]
+    public float stalkDistance = 8f; // Distance to maintain while stalking
+    public float stalkTimer = 5f; // Time before switching to hunt
+    private float stalkTimerCurrent;
+
+    //Hunting Settings
+    [Header("Hunting")]
+    public float huntSpeed = 6f;
+    public float catchDistance = 2f;
+
+    //non hunt speed
+    private float normalSpeed = 3.5f;
+
+    //GAME OVER
+    [Header("Game Over")]
+    public GameObject gameOverUI; 
+    private bool isGameOver = false;
+
+    void Start()
+    {
+        agent = GetComponent<NavMeshAgent>();
+        agent.speed = normalSpeed;
+        wanderTimerCurrent = wanderTimer;
+
+        // hide UI
+        if (gameOverUI != null)
+        {
+            gameOverUI.SetActive(false);
+        }
+        float randomX = Random.Range(-5f, 5f);  // 10 units wide (-5 to +5)
+        float randomZ = Random.Range(-2f, 2f);  // 4 units deep (-2 to +2)
+        transform.position = new Vector3(randomX, transform.position.y, randomZ);
+    }
+
+    void Update()
+    {
+        if (isGameOver)
+        {
+            // Check for restart input
+            if (Input.GetKeyDown(KeyCode.R))
+            {
+                RestartGame();
+            }
+            return;
+        }
+
+        // Execute behavior based on current state
+        switch (currentState)
+        {
+            case State.Wandering:
+                WanderingBehavior();
+                onWandering.Play();
+                break;
+            case State.Stalking:
+                StalkingBehavior();
+                onStalk.Play();
+                break;
+            case State.Hunting:
+                HuntingBehavior();
+                onHunt.Play();
+                break;
+            case State.Idle:
+                IdleBehavior();
+                break;
+        }
+    }
+
+    //WANDERING STATE
+    void WanderingBehavior()
+    {
+        agent.speed = normalSpeed;
+
+        // Check if player is visible
+        if (CanSeePlayer())
+        {
+            ChangeState(State.Stalking);
+            return;
+        }
+
+        // Wander to random points
+        wanderTimerCurrent += Time.deltaTime;
+
+        if (wanderTimerCurrent >= wanderTimer)
+        {
+            Vector3 newPos = RandomNavSphere(transform.position, wanderRadius);
+            agent.SetDestination(newPos);
+            wanderTimerCurrent = 0;
+        }
+    }
+
+    //STALKING STATE
+    void StalkingBehavior()
+    {
+        agent.speed = normalSpeed;
+
+       
+        // Check if still can see player
+        if (!CanSeePlayer())
+        {
+            ChangeState(State.Wandering);
+            return;
+        }
+
+        // Increment stalk timer
+        stalkTimerCurrent += Time.deltaTime;
+
+        // If stalked for 3 seconds, begin hunting
+        if (stalkTimerCurrent >= stalkTimer)
+        {
+            ChangeState(State.Hunting);
+            return;
+        }
+
+        // Stalk behind player (stay out of FOV)
+        StalkBehindPlayer();
+    }
+
+    //HUNTING STATE
+    void HuntingBehavior()
+    {
+        agent.speed = huntSpeed;
+     
+
+        // Move to player
+        agent.SetDestination(player.position);
+
+        // Check if caught player
+        float distanceToPlayer = Vector3.Distance(transform.position, player.position);
+        if (distanceToPlayer <= catchDistance)
+        {
+            CatchPlayer();
+        }
+
+        // If Jake loses sight of player during hunt
+        if (!CanSeePlayer())
+        {
+            ChangeState(State.Wandering);
+        }
+    }
+
+    // IDLE STATE
+    void IdleBehavior()
+    {
+        agent.SetDestination(transform.position);
+    }
+
+    //HELPER METHODS
+
+    // Changes state and resets timers
+    void ChangeState(State newState)
+    {
+        currentState = newState;
+
+        if (newState == State.Stalking)
+        {
+            stalkTimerCurrent = 0f;
+        }
+    }
+
+    // Check if Jake can see the player
+    bool CanSeePlayer()
+    {
+        if (player == null) return false;
+
+        Vector3 directionToPlayer = player.position - transform.position;
+        float distanceToPlayer = directionToPlayer.magnitude;
+
+        // Check if within detection range
+        if (distanceToPlayer > detectionRange)
+            return false;
+
+        // Check if within field of view
+        float angleToPlayer = Vector3.Angle(transform.forward, directionToPlayer);
+        if (angleToPlayer > fieldOfViewAngle / 2f)
+            return false;
+
+        // Check if can see
+        if (Physics.Raycast(transform.position + Vector3.up, directionToPlayer.normalized, distanceToPlayer, obstacleMask))
+            return false;
+
+        return true;
+    }
+
+  
+    // Stalk behind the player 
+    void StalkBehindPlayer()
+    {
+        Vector3 playerForward = player.forward;
+        Vector3 behindPlayer = player.position - (playerForward * stalkDistance);
+
+        agent.SetDestination(behindPlayer);
+    }
+
+    // Get random point on NavMesh 
+    Vector3 RandomNavSphere(Vector3 origin, float distance)
+    {
+        Vector3 randomDirection = Random.insideUnitSphere * distance;
+        randomDirection += origin;
+
+        NavMeshHit navHit;
+        NavMesh.SamplePosition(randomDirection, out navHit, distance, NavMesh.AllAreas);
+
+        return navHit.position;
+    }
+
+    // Called when Jake catches the player
+    void CatchPlayer()
+    {
+        Debug.Log("Jake caught the player! Game Over!");
+
+        isGameOver = true;
+        ChangeState(State.Idle);
+
+        // Disable player controls
+        if (player != null)
+        {
+            PlayerController playerController = player.GetComponent<PlayerController>();
+            if (playerController != null)
+            {
+                playerController.enabled = false;
+            }
+        }
+
+        // Show game over UI
+        if (gameOverUI != null)
+        {
+            gameOverUI.SetActive(true);
+        }
+        // reset time
+        Time.timeScale = 1f;
+        //load end screen
+        SceneManager.LoadScene(3);
+
+    }
+
+    // Restart the current scene
+    void RestartGame()
+    {
+        // Reset time scale, paused for end of game
+        Time.timeScale = 1f;
+
+        // Reload the current scene
+        SceneManager.LoadScene(SceneManager.GetActiveScene().name);
+    }
+
+    // Public method to restart (can be called from UI button)
+    public void RestartGameButton()
+    {
+        RestartGame();
+    }
+}
