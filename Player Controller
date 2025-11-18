@@ -1,0 +1,59 @@
+using UnityEngine;
+using TMPro;
+using UnityEngine.SceneManagement;
+
+public class PlayerController : MonoBehaviour
+{
+    public float moveSpeed = 10f;
+    public float jumpForce = 20f;
+    public TMP_Text scoreText;
+    public int score = 0;
+    private Rigidbody rb;
+    public GameObject winPanel;
+
+    void Start()
+    {
+        rb = GetComponent<Rigidbody>();
+        
+
+        // Prevent rotation
+        rb.freezeRotation = true;
+
+        //set time scale
+        Time.timeScale = 1f;
+    }
+
+    void Update()
+    {
+        //  jumping 
+        if (Input.GetKeyDown(KeyCode.Space))
+        {
+            rb.AddForce(Vector3.up * jumpForce, ForceMode.Impulse);
+        }
+        scoreText.text = "Score: " + score;
+        if (score >= 5)
+        {
+            SceneManager.LoadScene(4);
+        }
+    }
+
+    void FixedUpdate()
+    {
+        //  movement 
+        float moveX = Input.GetAxis("Horizontal");
+        float moveZ = Input.GetAxis("Vertical");
+
+        Vector3 move = new Vector3(moveX, 0f, moveZ).normalized * moveSpeed;
+        Vector3 newVelocity = new Vector3(move.x, rb.velocity.y, move.z);
+        rb.velocity = newVelocity;
+    }
+
+    void OnTriggerEnter(Collider other)
+    {
+        if (other.CompareTag("Shroom"))
+        {
+            Destroy(other.gameObject);
+            score++;
+        }
+    }
+}
