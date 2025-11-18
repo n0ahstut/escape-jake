@@ -1,0 +1,48 @@
+using UnityEngine;
+using UnityEngine.SceneManagement;
+
+public class ThirdPersonCamera : MonoBehaviour
+{
+    public Transform target;
+    public float distance = 5.0f;
+    public float height = 2.0f;
+    public float sensitivityX = 200f;
+    public float sensitivityY = 150f;
+    public float minYAngle = -20f;
+    public float maxYAngle = 60f;
+    public float smoothSpeed = 0.1f;
+
+    private float rotationX;
+    private float rotationY;
+    private Vector3 currentVelocity;
+
+    void Start()
+    {
+        // Only lock cursor if we're in the gameplay scene
+        if (SceneManager.GetActiveScene().name == "GameplaySceneName") // replace with your actual scene name
+        {
+            Cursor.lockState = CursorLockMode.Locked;
+            Cursor.visible = false;
+        }
+        else
+        {
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
+        }
+    }
+
+    void LateUpdate()
+    {
+        if (!target)
+            return;
+
+        rotationX += Input.GetAxis("Mouse X") * sensitivityX * Time.deltaTime;
+        rotationY -= Input.GetAxis("Mouse Y") * sensitivityY * Time.deltaTime;
+        rotationY = Mathf.Clamp(rotationY, minYAngle, maxYAngle);
+
+        Quaternion rotation = Quaternion.Euler(rotationY, rotationX, 0);
+        Vector3 desiredPosition = target.position - rotation * Vector3.forward * distance + Vector3.up * height;
+        transform.position = Vector3.SmoothDamp(transform.position, desiredPosition, ref currentVelocity, smoothSpeed);
+        transform.LookAt(target.position + Vector3.up * height * 0.5f);
+    }
+}
